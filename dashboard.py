@@ -10,7 +10,7 @@ st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
 st.title("Dashboard de visualisation avec Deep Clustering")
 
 # Chargement des données
-data_file = "data/data.csv"
+data_file = "data/processed_data.csv"
 if os.path.exists(data_file):
     df = pd.read_csv(data_file)
     st.write("Aperçu des données :")
