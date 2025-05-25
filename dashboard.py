@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
-st.title("Dashboard de visualisation sans TensorFlow")
+st.title("Consommation D'énergie Dans les Réseaux D'accès📊")
 
 # 1. Chargement des données pré-calculées
 data_file = "data/processed_data.csv"
