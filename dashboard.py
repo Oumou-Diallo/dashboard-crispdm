@@ -1,62 +1,44 @@
 import streamlit as st
 import pandas as pd
-import joblib
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
 st.title("Dashboard de visualisation sans TensorFlow")
 
-# 1. Chargement des données pré-traitées
+# 1. Chargement des données pré-calculées
 data_file = "data/data.csv"
 if not os.path.exists(data_file):
     st.error(f"Le fichier {data_file} est introuvable.")
     st.stop()
 full_data = pd.read_csv(data_file)
 
-# 2. Définir la liste des colonnes utilisées pour prédiction
-# Doivent correspondre exactement à celles utilisées lors de l'entraînement
-feature_cols = [
-    'cpu_percent', 'cpu_freq', 'mem_usage', 'net_sent', 'net_recv',
-    'cpu_deriv', 'mem_deriv', 'time_diff', 'throughput_sent', 'throughput_recv',
-    'tp_sent_roll_mean', 'tp_recv_roll_mean', 'tp_sent_roll_90pct',
-    'delta_net_sent', 'delta_net_recv', 'delta_net_sum', 'energy_j',
-    'Split_Type', 'latence_classe','energy_per_packet'
-    # plus toutes les colonnes de one-hot pour Split_Type
-] 
-
-# 3. Vérification des artefacts de scaling et clustering
-scaler_path = "models/scaler.joblib"
-cluster_model_path = "models/cluster_deep.joblib"  # ou ton modèle final joblib
-
-if not os.path.exists(scaler_path) or not os.path.exists(cluster_model_path):
-    st.warning("Le scaler ou le modèle de clustering est manquant dans 'models/'.")
+# 2. Vérifier la présence de la colonne 'cluster_deep'
+if 'cluster_deep' not in full_data.columns:
+    st.error("La colonne 'cluster_deep' est introuvable dans les données. Assurez-vous d'avoir exporté full_data.csv avec cette colonne.")
     st.stop()
 
-scaler = joblib.load(scaler_path)
-cluster_model = joblib.load(cluster_model_path)
-st.success("Scaler et modèle de clustering chargés avec succès.")
+# 3. Affichage interactif
+st.subheader("Aperçu des données avec clusters deep")
+st.dataframe(full_data.head())
 
-# 4. Prédiction interactive
-if st.button("Prédire les clusters deep" ):
-    try:
-        # Sélection et mise à l'échelle
-        X = full_data[feature_cols]
-        X_scaled = scaler.transform(X)
+# 4. Statistiques et visualisations
+# 4.1 Répartition des clusters deep
+st.subheader("Répartition des clusters Deep Clustering")
+cluster_counts = full_data['cluster_deep'].value_counts().sort_index()
+st.bar_chart(cluster_counts)
 
-        # Prédiction des clusters
-        clusters = cluster_model.predict(X_scaled)
-        full_data['Cluster'] = clusters
+# 4.2 Énergie moyenne par cluster deep
+if 'energy_per_packet' in full_data.columns:
+    st.subheader("Énergie moyenne par cluster Deep Clustering")
+    energy_mean = full_data.groupby('cluster_deep')['energy_per_packet'].mean()
+    st.bar_chart(energy_mean)
+else:
+    st.warning("La colonne 'energy_per_packet' est manquante.")
 
-        # 5. Affichage des résultats
-        st.subheader("Aperçu des prédictions Deep Clustering")
-        st.dataframe(full_data[['Cluster'] + feature_cols].head())
-
-        # Graphiques
-        st.subheader("Répartition des clusters")
-        st.bar_chart(full_data['Cluster'].value_counts().sort_index())
-
-        st.subheader("Énergie moyenne par cluster")
-        energy_mean = full_data.groupby('Cluster')['energy_per_packet'].mean()
-        st.bar_chart(energy_mean)
-    except Exception as e:
-        st.error(f"Erreur pendant la prédiction : {e}")
+# 4.3 Distribution des types de split par cluster deep
+if 'Split_Type' in full_data.columns:
+    st.subheader("Distribution des types de split par cluster Deep Clustering")
+    dist = full_data.groupby('cluster_deep')['Split_Type'].value_counts(normalize=True).unstack(fill_value=0)
+    st.dataframe(dist)
+else:
+    st.warning("La colonne 'Split_Type' est manquante.")
