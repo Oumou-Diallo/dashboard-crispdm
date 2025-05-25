@@ -16,12 +16,13 @@ full_data = pd.read_csv(data_file)
 # 2. Définir la liste des colonnes utilisées pour prédiction
 # Doivent correspondre exactement à celles utilisées lors de l'entraînement
 feature_cols = [
-    'cpu_percent', 'cpu_freq', 'mem_usage',
-    'net_sent', 'net_recv', 'time_diff',
-    'throughput_sent', 'throughput_recv', 'tp_sent_roll_mean',
-    'delta_net_sum', 'cpu_roll_mean', 'mem_roll_std',
+    'cpu_percent', 'cpu_freq', 'mem_usage', 'net_sent', 'net_recv',
+    'cpu_deriv', 'mem_deriv', 'time_diff', 'throughput_sent', 'throughput_recv',
+    'tp_sent_roll_mean', 'tp_recv_roll_mean', 'tp_sent_roll_90pct',
+    'delta_net_sent', 'delta_net_recv', 'delta_net_sum', 'energy_j',
+    'Split_Type', 'latence_classe','energy_per_packet'
     # plus toutes les colonnes de one-hot pour Split_Type
-] + [col for col in full_data.columns if col.startswith('split_')]
+] 
 
 # 3. Vérification des artefacts de scaling et clustering
 scaler_path = "models/scaler.joblib"
