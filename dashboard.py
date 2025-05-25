@@ -4,7 +4,7 @@ import joblib
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
-st.title("Dashboard de visualisation sans TensorFlow")
+st.title("Dashboard de Visualisation")
 
 # 1. Chargement des données pré-traitées
 data_file = "data/processed_data.csv"
