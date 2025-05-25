@@ -3,10 +3,10 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
-st.title("Dashboard de visualisation sans TensorFlow")
+st.title("Dashboard de visualisation")
 
 # 1. Chargement des données pré-calculées
-data_file = "data/data.csv"
+data_file = "data/processed_data.csv"
 if not os.path.exists(data_file):
     st.error(f"Le fichier {data_file} est introuvable.")
     st.stop()
