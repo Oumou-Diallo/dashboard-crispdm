@@ -1,51 +1,57 @@
-# dashboard.py
 import streamlit as st
 import pandas as pd
 import joblib
-import numpy as np
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
-st.title("Dashboard de visualisation avec Deep Clustering")
+st.title("Dashboard de visualisation sans TensorFlow")
 
-# Chargement des données
-data_file = "data/processed_data.csv"
+# 1. Chargement des données pré-traitées
+data_file = "data/full_data.csv"
 if os.path.exists(data_file):
     df = pd.read_csv(data_file)
     st.write("Aperçu des données :")
     st.dataframe(df.head())
 else:
     st.error(f"Le fichier {data_file} est introuvable.")
+    st.stop()
 
-# Vérification si les fichiers nécessaires existent
-ae_model_path = "models/ae_deepcluster.h5"
-cluster_model_path = "models/kmeans.joblib"
+# 2. Vérification du scaler et du modèle de clustering
+cluster_model_path = "models/kmeans.joblib"  # ou kmeans.joblib si tu préfères
 scaler_path = "models/scaler.joblib"
 
-if all(os.path.exists(path) for path in [ae_model_path, cluster_model_path, scaler_path]):
-    # Chargement des modèles
-    autoencoder = tf.keras.models.load_model(ae_model_path)
-    cluster_model = joblib.load(cluster_model_path)
-    scaler = joblib.load(scaler_path)
-    
-    st.success("Modèle autoencodeur et modèle de clustering chargés.")
+if not os.path.exists(cluster_model_path) or not os.path.exists(scaler_path):
+    st.warning("Le modèle de clustering ou le scaler est manquant dans 'models/'.")
+    st.stop()
 
-    if st.button("Faire des prédictions Deep Cluster"):
-        try:
-            # Préparation des données numériques
-            num_data = df.select_dtypes(include="number")
-            num_data_scaled = scaler.transform(num_data)
-            
-            # Extraction des features latentes
-            latent_features = autoencoder.predict(num_data_scaled)
+# 3. Chargement des artefacts
+scaler = joblib.load(scaler_path)
+cluster_model = joblib.load(cluster_model_path)
+st.success("Scaler et modèle de clustering chargés avec succès.")
 
-            # Clustering sur les features latentes
-            cluster_preds = cluster_model.predict(latent_features)
-            df["Cluster"] = cluster_preds
+# 4. Bouton de prédiction
+if st.button("Prédire les clusters"):
+    try:
+        # On sélectionne uniquement les colonnes numériques pour scaler
+        num_cols = df.select_dtypes(include="number").columns.tolist()
+        X = df[num_cols]
+        X_scaled = scaler.transform(X)
 
-            st.subheader("Données avec les clusters détectés :")
-            st.dataframe(df[["Cluster"] + list(num_data.columns)])
-        except Exception as e:
-            st.error(f"Erreur lors de la prédiction : {e}")
-else:
-    st.warning("Un ou plusieurs fichiers de modèle sont manquants dans le dossier 'models'.")
+        # Prédiction des clusters
+        clusters = cluster_model.predict(X_scaled)
+        df["Cluster"] = clusters
+
+        # Affichage des résultats
+        st.subheader("Résultats de clustering")
+        st.dataframe(df[["Cluster"] + num_cols])
+
+        # Visualisations
+        st.subheader("Taille des clusters")
+        st.bar_chart(df["Cluster"].value_counts().sort_index())
+
+        st.subheader("Énergie moyenne par cluster")
+        energy_mean = df.groupby("Cluster")["energy_per_packet"].mean()
+        st.bar_chart(energy_mean)
+
+    except Exception as e:
+        st.error(f"Erreur pendant la prédiction : {e}")
