@@ -3,7 +3,7 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
-st.title("Dashboard de Visualisation")
+st.title("Dashboard de Visualisation📊")
 
 # 1. Chargement des données pré-calculées
 data_file = "data/processed_data.csv"
