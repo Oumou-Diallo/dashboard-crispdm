@@ -1,95 +1,124 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import joblib
 import os
 import plotly.express as px
-import tensorflow as tf
+from joblib import load # Import joblib for loading models
 
-# === Configuration ===
-st.set_page_config(page_title="Dashboard Deep Clustering", layout="wide")
-st.title("📡 Analyse Énergétique via Deep Clustering dans le RAN 5G")
+# --- Configuration ---
+st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
+st.markdown("""
+    <style>
+    .main {
+        background-color: #f5f7fa;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-# === 1. Chargement des données ===
-data_path = "data/processed_data.csv"
-if not os.path.exists(data_path):
-    st.error("❌ Fichier introuvable : data/processed_data.csv")
-    st.stop()
+st.title("🌐 Analyse de la Consommation d'Énergie dans le RAN 5G")
+st.markdown("""
+Bienvenue sur ce dashboard interactif permettant d'explorer la consommation
+d'énergie en fonction des clusters issus du Deep Clustering appliqué à un DU simulé.
+""")
 
-df = pd.read_csv(data_path)
+st.title("🔍 Analyse Énergétique des Splits Fonctionnels dans le RAN 5G")
 
-# === 2. Chargement des artefacts ===
-ae_model_path = "models/ae_deepcluster.h5"
+# --- Chargement des données et des modèles ---
+st.sidebar.header("Configuration")
+
+# Define file paths for data and models
+data_file = "data/processed_data.csv"
+# ae_model_path = "models/ae_deepcluster.h5" # COMMENTED OUT: Not using TensorFlow (.h5) as per request
 cluster_model_path = "models/kmeans.joblib"
 scaler_path = "models/scaler.joblib"
 
-if not all(os.path.exists(p) for p in [ae_model_path, cluster_model_path, scaler_path]):
-    st.error("❌ Un ou plusieurs fichiers de modèle sont manquants dans le dossier 'models/'.")
+# Check if data file exists
+if not os.path.exists(data_file):
+    st.sidebar.error("Fichier de données non trouvé.")
+    st.error(f"❌ Fichier introuvable : {data_file}")
     st.stop()
 
-autoencoder = tf.keras.models.load_model(ae_model_path)
-cluster_model = joblib.load(cluster_model_path)
-scaler = joblib.load(scaler_path)
+# Load main data
+full_data = pd.read_csv(data_file)
 
-st.success("✅ Modèles chargés avec succès (Autoencodeur + KMeans + Scaler)")
-
-# === 3. Prédiction des clusters via Deep Clustering ===
+# Load models using joblib
 try:
-    X = df.select_dtypes(include='number')
-    X_scaled = scaler.transform(X)
-    latent_features = autoencoder.predict(X_scaled)
-    clusters = cluster_model.predict(latent_features)
-    df['cluster_deep'] = clusters
-    st.success("✅ Clusters prédits via Deep Clustering")
+    # If your autoencoder was also saved via joblib, you would load it here
+    # For now, it's commented out as per "no tensorflow" and .h5 extension
+    # ae_model = load(ae_model_path) 
+    kmeans_model = load(cluster_model_path)
+    scaler = load(scaler_path)
+    st.sidebar.success("Modèles chargés avec succès !")
+except FileNotFoundError:
+    st.sidebar.error("Un ou plusieurs fichiers de modèle (.joblib) sont introuvables.")
+    st.error("❌ Erreur : Vérifiez les chemins des fichiers modèles.")
+    st.stop()
 except Exception as e:
-    st.error(f"❌ Erreur pendant la prédiction : {e}")
+    st.sidebar.error(f"Erreur lors du chargement des modèles : {e}")
+    st.error(f"❌ Erreur critique : Impossible de charger les modèles. Détails : {e}")
     st.stop()
 
-# === 4. Aperçu des données ===
-st.subheader("🧾 Données avec clusters prédits")
-st.dataframe(df.head(10))
 
-# === 5. Visualisation : Répartition des clusters ===
-st.subheader("📊 Répartition des clusters")
-fig1 = px.bar(df['cluster_deep'].value_counts().sort_index(),
-              labels={"index": "Cluster", "value": "Nombre d'échantillons"},
-              title="Nombre d’échantillons par cluster",
-              color=df['cluster_deep'].value_counts().sort_index().index)
+# --- Vérification des colonnes essentielles ---
+# Ensure 'cluster_deep' column is present after loading data and potentially applying clustering
+# (Assuming 'cluster_deep' is already in processed_data.csv or would be added by a K-Means model if applied directly here)
+required_cols = ['cluster_deep', 'energy_per_packet', 'Split_Type']
+missing = [c for c in required_cols if c not in full_data.columns]
+if missing:
+    st.error(f"❌ Colonnes essentielles manquantes dans 'processed_data.csv' : {', '.join(missing)}")
+    st.stop()
+
+# --- Aperçu des données ---
+st.subheader("🔢 Aperçu des données")
+st.dataframe(full_data.head(10))
+
+# --- Visualisation : Répartition des clusters ---
+st.subheader("📊 Répartition des clusters Deep Clustering")
+cluster_counts = full_data['cluster_deep'].value_counts().sort_index()
+fig1 = px.bar(
+    cluster_counts.reset_index(), # Convert series to dataframe for px.bar
+    x='index', y='cluster_deep', # Use 'index' for cluster labels, 'cluster_deep' for counts after value_counts()
+    labels={'index': 'Cluster', 'cluster_deep': 'Nombre de points'}, # Update labels as per reset_index() output
+    title="Nombre d’échantillons par cluster",
+    color=cluster_counts.index.astype(str) # Ensure color is based on cluster index
+)
 st.plotly_chart(fig1, use_container_width=True)
 
-# === 6. Visualisation : Énergie moyenne par cluster ===
-if 'energy_per_packet' in df.columns:
-    st.subheader("⚡ Énergie moyenne par cluster")
-    energy_mean = df.groupby('cluster_deep')['energy_per_packet'].mean()
-    fig2 = px.bar(energy_mean,
-                  labels={"index": "Cluster", "value": "Énergie moyenne (J/paquet)"},
-                  title="Consommation moyenne d'énergie",
-                  color=energy_mean.index)
-    st.plotly_chart(fig2, use_container_width=True)
-else:
-    st.warning("⚠️ Colonne 'energy_per_packet' manquante.")
+# --- Visualisation : Énergie moyenne par cluster ---
+st.subheader("⚡ Énergie moyenne par cluster Deep Clustering")
+energy_mean = full_data.groupby('cluster_deep')['energy_per_packet'].mean().sort_values()
+fig2 = px.bar(
+    energy_mean.reset_index(), # Convert series to dataframe for px.bar
+    x='cluster_deep', y='energy_per_packet', # Use actual column names from reset_index()
+    labels={'cluster_deep': 'Cluster', 'energy_per_packet': 'Énergie moyenne (J/paquet)'},
+    title="Consommation moyenne par cluster",
+    color='energy_per_packet', # Color by energy value
+    color_continuous_scale=px.colors.sequential.Viridis # Use a sequential scale for continuous values
+)
+st.plotly_chart(fig2, use_container_width=True)
 
-# === 7. Split Type par cluster ===
-if 'Split_Type' in df.columns:
-    st.subheader("📌 Distribution des Splits dans les Clusters")
-    split_dist = df.groupby('cluster_deep')['Split_Type'].value_counts(normalize=True).unstack(fill_value=0)
-    st.dataframe(split_dist.style.format("{:.2%}"))
-else:
-    st.info("ℹ️ Colonne 'Split_Type' non disponible.")
+# --- Visualisation : Distribution des types de split ---
+st.subheader("📌 Distribution des splits dans chaque cluster")
+split_dist = full_data.groupby('cluster_deep')['Split_Type'].value_counts(normalize=True).unstack(fill_value=0)
+fig3 = px.bar(
+    split_dist, barmode='stack',
+    labels={'value': 'Proportion', 'cluster_deep': 'Cluster', 'Split_Type': 'Type de Split'},
+    title="Proportion des types de splits par cluster",
+    color_discrete_sequence=px.colors.qualitative.Pastel # Ensure colors are distinct for each Split_Type
+)
+st.plotly_chart(fig3, use_container_width=True)
 
-# === 8. Analyse personnalisée des splits ===
-st.subheader("🔍 Split le plus ou le moins énergivore")
-if 'Split_Type' in df.columns and 'energy_per_packet' in df.columns:
-    choix = st.radio("Souhaitez-vous identifier :", ["Le split le PLUS énergivore", "Le split le MOINS énergivore"])
-    split_energy = df.groupby('Split_Type')['energy_per_packet'].mean()
 
-    if choix == "Le split le PLUS énergivore":
-        worst = split_energy.idxmax()
-        val = split_energy.max()
-        st.error(f"🔺 Le split **{int(worst)}** est le PLUS énergivore avec **{val:.2e} J/paquet**.")
-    else:
-        best = split_energy.idxmin()
-        val = split_energy.min()
-        st.success(f"🔻 Le split **{int(best)}** est le MOINS énergivore avec **{val:.2e} J/paquet**.")
+# === Bouton interactif : Prédiction Split énergétique ===
+st.subheader("🔍 Analyse personnalisée des splits")
+choice = st.radio("Souhaitez-vous identifier :", ["Le split le PLUS énergivore", "Le split le MOINS énergivore"])
+
+split_energy = full_data.groupby('Split_Type')['energy_per_packet'].mean()
+
+if choice == "Le split le PLUS énergivore":
+    target_split = split_energy.idxmax()
+    value = split_energy.max()
+    st.success(f"🔺 Le split **{int(target_split)}** est le PLUS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
 else:
-    st.warning("⚠️ Analyse impossible : colonnes 'Split_Type' ou 'energy_per_packet' manquantes.")
+    target_split = split_energy.idxmin()
+    value = split_energy.min()
+    st.success(f"🔻 Le split **{int(target_split)}** est le MOINS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
