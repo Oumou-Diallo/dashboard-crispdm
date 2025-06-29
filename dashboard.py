@@ -1,8 +1,3 @@
-import warnings
-from sklearn.exceptions import InconsistentVersionWarning
-
-# Ignorer les avertissements de version
-warnings.filterwarnings("ignore", category=InconsistentVersionWarning)
 import streamlit as st
 import pandas as pd
 import os
