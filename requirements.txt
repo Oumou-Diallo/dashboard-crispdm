@@ -4,4 +4,4 @@ streamlit
 pandas
 scikit-learn
 plotly
-h5py
+tensorflow==2.12.0
