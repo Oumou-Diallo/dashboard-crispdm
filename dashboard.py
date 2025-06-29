@@ -2,7 +2,9 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-from joblib import load  # Import joblib for loading models
+from joblib import load
+import numpy as np
+from tensorflow.keras.models import load_model  # Pour charger l'autoencodeur
 
 # --- Configuration générale ---
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
@@ -32,6 +34,8 @@ st.sidebar.header("Configuration")
 data_file = "data/processed_data.csv"
 cluster_model_path = "models/kmeans.joblib"
 scaler_path = "models/scaler.joblib"
+autoencoder_path = "models/autoencoder.h5"  # Chemin vers le modèle Autoencoder
+features_path = "models/features.joblib"  # Liste des features utilisées pour l'entraînement
 
 if not os.path.exists(data_file):
     st.sidebar.error("Fichier de données non trouvé.")
@@ -40,19 +44,46 @@ if not os.path.exists(data_file):
 full_data = pd.read_csv(data_file)
 
 try:
+    # Charger tous les modèles nécessaires
     kmeans_model = load(cluster_model_path)
     scaler = load(scaler_path)
+    autoencoder = load_model(autoencoder_path)
+    feature_columns = load(features_path)  # Liste des colonnes utilisées pour le clustering
     st.sidebar.success("Modèles chargés avec succès ✅")
 except Exception as e:
     st.sidebar.error(f"Erreur lors du chargement des modèles : {e}")
     st.stop()
 
 # --- Vérification des colonnes ---
-required_cols = ['cluster_deep', 'energy_per_packet', 'Split_Type']
+required_cols = ['energy_per_packet', 'Split_Type'] + feature_columns
 missing = [c for c in required_cols if c not in full_data.columns]
 if missing:
     st.error(f"❌ Colonnes manquantes dans 'processed_data.csv' : {', '.join(missing)}")
     st.stop()
+
+# --- Calcul des clusters en temps réel ---
+@st.cache_data
+def calculate_clusters(data, _autoencoder, _kmeans, _scaler, features):
+    """Calcule les clusters à partir des données brutes"""
+    # Sélection et normalisation des features
+    X = data[features]
+    X_scaled = _scaler.transform(X)
+    
+    # Représentation latente via Autoencoder
+    latent_rep = _autoencoder.predict(X_scaled, verbose=0)
+    
+    # Prédiction des clusters avec KMeans
+    clusters = _kmeans.predict(latent_rep)
+    return clusters
+
+# Ajout des clusters aux données
+full_data['cluster_deep'] = calculate_clusters(
+    full_data, 
+    autoencoder, 
+    kmeans_model, 
+    scaler, 
+    feature_columns
+)
 
 # --- Aperçu des données ---
 st.subheader("🔢 Aperçu des données")
