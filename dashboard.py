@@ -30,7 +30,7 @@ d'énergie en fonction des clusters issus d'un clustering non supervisé (Agglom
 st.sidebar.header("Configuration")
 
 data_file = "data/processed_data.csv"
-cluster_model_path = "models/agglo_model.joblib"
+cluster_model_path = "models/agg.joblib"
 scaler_path = "models/scaler.joblib"
 
 # Vérification des fichiers
