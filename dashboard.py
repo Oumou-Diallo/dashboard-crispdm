@@ -31,38 +31,48 @@ st.sidebar.header("Configuration")
 
 data_file = "data/processed_data.csv"
 cluster_model_path = "models/agg.joblib"
-scaler_path = "models/scaler.joblib"
+scaler_path        = "models/scaler.joblib"
 
-# Vérification des fichiers
 if not os.path.exists(data_file):
     st.sidebar.error("Fichier de données non trouvé.")
     st.stop()
 
 full_data = pd.read_csv(data_file)
 
-# Chargement des modèles
 try:
     agglo_model = load(cluster_model_path)
-    scaler = load(scaler_path)
+    scaler      = load(scaler_path)
     st.sidebar.success("Modèles chargés avec succès ✅")
 except Exception as e:
     st.sidebar.error(f"Erreur lors du chargement des modèles : {e}")
     st.stop()
 
+# --- Liste FIXE des colonnes utilisées lors de l'entraînement du scaler ---
+feature_cols = [
+    'cpu_percent','cpu_freq','mem_usage',
+    'net_sent','net_recv','energy_j',
+    'cpu_deriv','mem_deriv','time_diff',
+    'throughput_sent','throughput_recv',
+    'tp_sent_roll_mean','tp_recv_roll_mean','tp_sent_roll_90pct',
+    'delta_net_sent','delta_net_recv','delta_net_sum',
+    'Split_Type','latence_classe'
+]
+
+# Vérification que toutes ces colonnes sont présentes
+missing = [c for c in feature_cols if c not in full_data.columns]
+if missing:
+    st.error(f"❌ Colonnes manquantes dans le CSV pour le prétraitement : {missing}")
+    st.stop()
+
 # --- Prétraitement et prédiction des clusters ---
 st.subheader("🔄 Prétraitement des données et prédiction des clusters")
 
-# Supposons que les colonnes utilisées sont toutes sauf 'cluster_deep', 'Split_Type', 'energy_per_packet'
-feature_cols = [col for col in full_data.columns if col not in ['cluster_deep', 'Split_Type', 'energy_per_packet']]
+# Extraction et mise à l'échelle des features
+X = full_data[feature_cols]
+X_scaled = scaler.transform(X)
 
-if not feature_cols:
-    st.error("❌ Aucune colonne de caractéristiques détectée pour le clustering.")
-    st.stop()
-
-scaled_data = scaler.transform(full_data[feature_cols])
-
-# Prédiction des clusters avec Agglomerative
-clusters = agglo_model.fit_predict(scaled_data)
+# Clustering hiérarchique
+clusters = agglo_model.fit_predict(X_scaled)
 full_data['cluster_deep'] = clusters
 
 # --- Aperçu des données ---
@@ -99,11 +109,16 @@ st.plotly_chart(fig2, use_container_width=True)
 
 # --- Distribution des splits par cluster ---
 st.subheader("📌 Distribution des splits dans chaque cluster")
-split_dist = full_data.groupby('cluster_deep')['Split_Type'].value_counts(normalize=True).unstack(fill_value=0)
+split_dist = (
+    full_data
+    .groupby('cluster_deep')['Split_Type']
+    .value_counts(normalize=True)
+    .unstack(fill_value=0)
+)
 fig3 = px.bar(
     split_dist,
     barmode='stack',
-    labels={'value': 'Proportion', 'cluster_deep': 'Cluster', 'Split_Type': 'Type de Split'},
+    labels={'value':'Proportion','cluster_deep':'Cluster','Split_Type':'Type de Split'},
     title="Proportion des types de splits par cluster",
     color_discrete_sequence=px.colors.qualitative.Pastel
 )
@@ -111,19 +126,22 @@ st.plotly_chart(fig3, use_container_width=True)
 
 # --- Analyse interactive des splits ---
 st.subheader("🔍 Analyse personnalisée des splits")
-choice = st.radio("Souhaitez-vous identifier :", ["Le split le PLUS énergivore", "Le split le MOINS énergivore"])
+choice = st.radio(
+    "Souhaitez-vous identifier :",
+    ["Le split le PLUS énergivore", "Le split le MOINS énergivore"]
+)
 
 split_energy = full_data.groupby('Split_Type')['energy_per_packet'].mean()
 
 if choice == "Le split le PLUS énergivore":
-    target_split = split_energy.idxmax()
-    value = split_energy.max()
-    st.success(f"🔺 Le split **{int(target_split)}** est le PLUS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
+    s = split_energy.idxmax()
+    v = split_energy.max()
+    st.success(f"🔺 Le split **{int(s)}** est le PLUS énergivore avec **{v:.2e} J/paquet**.")
 else:
-    target_split = split_energy.idxmin()
-    value = split_energy.min()
-    st.success(f"🔻 Le split **{int(target_split)}** est le MOINS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
+    s = split_energy.idxmin()
+    v = split_energy.min()
+    st.success(f"🔻 Le split **{int(s)}** est le MOINS énergivore avec **{v:.2e} J/paquet**.")
 
-# --- Option bouton de rechargement / reset ---
+# --- Bouton de rafraîchissement ---
 if st.button("🔄 Rafraîchir les données"):
     st.experimental_rerun()
