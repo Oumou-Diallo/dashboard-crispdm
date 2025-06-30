@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-from joblib import load
-import numpy as np
-from tensorflow.keras.models import load_model  # Pour charger l'autoencodeur
+from joblib import load  # Pour charger Agglomerative et le scaler
 
 # --- Configuration générale ---
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
@@ -25,17 +23,15 @@ st.markdown("""
 st.title("🌐 Analyse de la Consommation d'Énergie dans le RAN 5G")
 st.markdown("""
 Bienvenue sur ce dashboard interactif permettant d'explorer la consommation
-d'énergie en fonction des clusters issus du Deep Clustering appliqué à un DU simulé.
+d'énergie en fonction des clusters issus d'un clustering non supervisé (Agglomerative).
 """)
 
 # --- Chargement des données et des modèles ---
 st.sidebar.header("Configuration")
 
 data_file = "data/processed_data.csv"
-cluster_model_path = "models/kmeans.joblib"
-scaler_path = "models/scaler.joblib"
-autoencoder_path = "models/ae_deepcluster.h5"  # Chemin vers le modèle Autoencoder
-features_path = "models/features.joblib"  # Liste des features utilisées pour l'entraînement
+cluster_model_path = "models/agg.joblib"
+scaler_path        = "models/scaler.joblib"
 
 if not os.path.exists(data_file):
     st.sidebar.error("Fichier de données non trouvé.")
@@ -44,53 +40,47 @@ if not os.path.exists(data_file):
 full_data = pd.read_csv(data_file)
 
 try:
-    # Charger tous les modèles nécessaires
-    kmeans_model = load(cluster_model_path)
-    scaler = load(scaler_path)
-    autoencoder = load_model(autoencoder_path)
-    feature_columns = load(features_path)  # Liste des colonnes utilisées pour le clustering
+    agglo_model = load(cluster_model_path)
+    scaler      = load(scaler_path)
     st.sidebar.success("Modèles chargés avec succès ✅")
 except Exception as e:
     st.sidebar.error(f"Erreur lors du chargement des modèles : {e}")
     st.stop()
 
-# --- Vérification des colonnes ---
-required_cols = ['energy_per_packet', 'Split_Type'] + feature_columns
-missing = [c for c in required_cols if c not in full_data.columns]
+# --- Liste FIXE des colonnes utilisées lors de l'entraînement du scaler ---
+feature_cols = [
+    'cpu_percent','cpu_freq','mem_usage',
+    'net_sent','net_recv','energy_j',
+    'cpu_deriv','mem_deriv','time_diff',
+    'throughput_sent','throughput_recv',
+    'tp_sent_roll_mean','tp_recv_roll_mean','tp_sent_roll_90pct',
+    'delta_net_sent','delta_net_recv','delta_net_sum',
+    'Split_Type','latence_classe','energy_per_packet'
+]
+
+# Vérification que toutes ces colonnes sont présentes
+missing = [c for c in feature_cols if c not in full_data.columns]
 if missing:
-    st.error(f"❌ Colonnes manquantes dans 'processed_data.csv' : {', '.join(missing)}")
+    st.error(f"❌ Colonnes manquantes dans le CSV pour le prétraitement : {missing}")
     st.stop()
 
-# --- Calcul des clusters en temps réel ---
-@st.cache_data
-def calculate_clusters(data, _autoencoder, _kmeans, _scaler, features):
-    """Calcule les clusters à partir des données brutes"""
-    # Sélection et normalisation des features
-    X = data[features]
-    X_scaled = _scaler.transform(X)
-    
-    # Représentation latente via Autoencoder
-    latent_rep = _autoencoder.predict(X_scaled, verbose=0)
-    
-    # Prédiction des clusters avec KMeans
-    clusters = _kmeans.predict(latent_rep)
-    return clusters
+# --- Prétraitement et prédiction des clusters ---
+st.subheader("🔄 Prétraitement des données et prédiction des clusters")
 
-# Ajout des clusters aux données
-full_data['cluster_deep'] = calculate_clusters(
-    full_data, 
-    autoencoder, 
-    kmeans_model, 
-    scaler, 
-    feature_columns
-)
+# Extraction et mise à l'échelle des features
+X = full_data[feature_cols]
+X_scaled = scaler.transform(X)
+
+# Clustering hiérarchique
+clusters = agglo_model.fit_predict(X_scaled)
+full_data['cluster_deep'] = clusters
 
 # --- Aperçu des données ---
 st.subheader("🔢 Aperçu des données")
 st.dataframe(full_data.head(10))
 
 # --- Répartition des clusters ---
-st.subheader("📊 Répartition des clusters Deep Clustering")
+st.subheader("📊 Répartition des clusters")
 cluster_counts = full_data['cluster_deep'].value_counts().sort_index()
 cluster_df = cluster_counts.reset_index()
 cluster_df.columns = ['cluster_deep', 'count']
@@ -105,7 +95,7 @@ fig1 = px.bar(
 st.plotly_chart(fig1, use_container_width=True)
 
 # --- Énergie moyenne par cluster ---
-st.subheader("⚡ Énergie moyenne par cluster Deep Clustering")
+st.subheader("⚡ Énergie moyenne par cluster")
 energy_mean = full_data.groupby('cluster_deep')['energy_per_packet'].mean().sort_values()
 fig2 = px.bar(
     energy_mean.reset_index(),
@@ -119,11 +109,16 @@ st.plotly_chart(fig2, use_container_width=True)
 
 # --- Distribution des splits par cluster ---
 st.subheader("📌 Distribution des splits dans chaque cluster")
-split_dist = full_data.groupby('cluster_deep')['Split_Type'].value_counts(normalize=True).unstack(fill_value=0)
+split_dist = (
+    full_data
+    .groupby('cluster_deep')['Split_Type']
+    .value_counts(normalize=True)
+    .unstack(fill_value=0)
+)
 fig3 = px.bar(
     split_dist,
     barmode='stack',
-    labels={'value': 'Proportion', 'cluster_deep': 'Cluster', 'Split_Type': 'Type de Split'},
+    labels={'value':'Proportion','cluster_deep':'Cluster','Split_Type':'Type de Split'},
     title="Proportion des types de splits par cluster",
     color_discrete_sequence=px.colors.qualitative.Pastel
 )
@@ -131,19 +126,22 @@ st.plotly_chart(fig3, use_container_width=True)
 
 # --- Analyse interactive des splits ---
 st.subheader("🔍 Analyse personnalisée des splits")
-choice = st.radio("Souhaitez-vous identifier :", ["Le split le PLUS énergivore", "Le split le MOINS énergivore"])
+choice = st.radio(
+    "Souhaitez-vous identifier :",
+    ["Le split le PLUS énergivore", "Le split le MOINS énergivore"]
+)
 
 split_energy = full_data.groupby('Split_Type')['energy_per_packet'].mean()
 
 if choice == "Le split le PLUS énergivore":
-    target_split = split_energy.idxmax()
-    value = split_energy.max()
-    st.success(f"🔺 Le split **{int(target_split)}** est le PLUS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
+    s = split_energy.idxmax()
+    v = split_energy.max()
+    st.success(f"🔺 Le split **{int(s)}** est le PLUS énergivore avec **{v:.2e} J/paquet**.")
 else:
-    target_split = split_energy.idxmin()
-    value = split_energy.min()
-    st.success(f"🔻 Le split **{int(target_split)}** est le MOINS énergivore avec une moyenne de **{value:.2e} J/paquet**.")
+    s = split_energy.idxmin()
+    v = split_energy.min()
+    st.success(f"🔻 Le split **{int(s)}** est le MOINS énergivore avec **{v:.2e} J/paquet**.")
 
-# --- Option bouton de rechargement / reset ---
+# --- Bouton de rafraîchissement ---
 if st.button("🔄 Rafraîchir les données"):
     st.experimental_rerun()
