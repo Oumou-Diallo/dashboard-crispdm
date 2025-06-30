@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
-from joblib import load
-import numpy as np
-from tensorflow.keras.models import load_model  # Pour charger l'autoencodeur
+from joblib import load  # Pour charger Agglomerative et le scaler
 
 # --- Configuration générale ---
 st.set_page_config(page_title="Dashboard CRISP-DM", layout="wide")
@@ -25,72 +23,54 @@ st.markdown("""
 st.title("🌐 Analyse de la Consommation d'Énergie dans le RAN 5G")
 st.markdown("""
 Bienvenue sur ce dashboard interactif permettant d'explorer la consommation
-d'énergie en fonction des clusters issus du Deep Clustering appliqué à un DU simulé.
+d'énergie en fonction des clusters issus d'un clustering non supervisé (Agglomerative).
 """)
 
 # --- Chargement des données et des modèles ---
 st.sidebar.header("Configuration")
 
 data_file = "data/processed_data.csv"
-cluster_model_path = "models/kmeans.joblib"
+cluster_model_path = "models/agglo_model.joblib"
 scaler_path = "models/scaler.joblib"
-autoencoder_path = "models/ae_deepcluster.h5"  # Chemin vers le modèle Autoencoder
-features_path = "models/features.joblib"  # Liste des features utilisées pour l'entraînement
 
+# Vérification des fichiers
 if not os.path.exists(data_file):
     st.sidebar.error("Fichier de données non trouvé.")
     st.stop()
 
 full_data = pd.read_csv(data_file)
 
+# Chargement des modèles
 try:
-    # Charger tous les modèles nécessaires
-    kmeans_model = load(cluster_model_path)
+    agglo_model = load(cluster_model_path)
     scaler = load(scaler_path)
-    autoencoder = load_model(autoencoder_path)
-    feature_columns = load(features_path)  # Liste des colonnes utilisées pour le clustering
     st.sidebar.success("Modèles chargés avec succès ✅")
 except Exception as e:
     st.sidebar.error(f"Erreur lors du chargement des modèles : {e}")
     st.stop()
 
-# --- Vérification des colonnes ---
-required_cols = ['energy_per_packet', 'Split_Type'] + feature_columns
-missing = [c for c in required_cols if c not in full_data.columns]
-if missing:
-    st.error(f"❌ Colonnes manquantes dans 'processed_data.csv' : {', '.join(missing)}")
+# --- Prétraitement et prédiction des clusters ---
+st.subheader("🔄 Prétraitement des données et prédiction des clusters")
+
+# Supposons que les colonnes utilisées sont toutes sauf 'cluster_deep', 'Split_Type', 'energy_per_packet'
+feature_cols = [col for col in full_data.columns if col not in ['cluster_deep', 'Split_Type', 'energy_per_packet']]
+
+if not feature_cols:
+    st.error("❌ Aucune colonne de caractéristiques détectée pour le clustering.")
     st.stop()
 
-# --- Calcul des clusters en temps réel ---
-@st.cache_data
-def calculate_clusters(data, _autoencoder, _kmeans, _scaler, features):
-    """Calcule les clusters à partir des données brutes"""
-    # Sélection et normalisation des features
-    X = data[features]
-    X_scaled = _scaler.transform(X)
-    
-    # Représentation latente via Autoencoder
-    latent_rep = _autoencoder.predict(X_scaled, verbose=0)
-    
-    # Prédiction des clusters avec KMeans
-    clusters = _kmeans.predict(latent_rep)
-    return clusters
+scaled_data = scaler.transform(full_data[feature_cols])
 
-# Ajout des clusters aux données
-full_data['cluster_deep'] = calculate_clusters(
-    full_data, 
-    autoencoder, 
-    kmeans_model, 
-    scaler, 
-    feature_columns
-)
+# Prédiction des clusters avec Agglomerative
+clusters = agglo_model.fit_predict(scaled_data)
+full_data['cluster_deep'] = clusters
 
 # --- Aperçu des données ---
 st.subheader("🔢 Aperçu des données")
 st.dataframe(full_data.head(10))
 
 # --- Répartition des clusters ---
-st.subheader("📊 Répartition des clusters Deep Clustering")
+st.subheader("📊 Répartition des clusters")
 cluster_counts = full_data['cluster_deep'].value_counts().sort_index()
 cluster_df = cluster_counts.reset_index()
 cluster_df.columns = ['cluster_deep', 'count']
@@ -105,7 +85,7 @@ fig1 = px.bar(
 st.plotly_chart(fig1, use_container_width=True)
 
 # --- Énergie moyenne par cluster ---
-st.subheader("⚡ Énergie moyenne par cluster Deep Clustering")
+st.subheader("⚡ Énergie moyenne par cluster")
 energy_mean = full_data.groupby('cluster_deep')['energy_per_packet'].mean().sort_values()
 fig2 = px.bar(
     energy_mean.reset_index(),
