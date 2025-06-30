@@ -55,7 +55,7 @@ feature_cols = [
     'throughput_sent','throughput_recv',
     'tp_sent_roll_mean','tp_recv_roll_mean','tp_sent_roll_90pct',
     'delta_net_sent','delta_net_recv','delta_net_sum',
-    'Split_Type','latence_classe'
+    'Split_Type','latence_classe','energy_per_packet'
 ]
 
 # Vérification que toutes ces colonnes sont présentes
