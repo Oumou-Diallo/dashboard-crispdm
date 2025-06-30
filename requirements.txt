@@ -4,4 +4,3 @@ streamlit
 pandas
 scikit-learn
 plotly
-tensorflow==2.12.0
